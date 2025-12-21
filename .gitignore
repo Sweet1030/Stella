@@ -1,0 +1,13 @@
+# 🔒 보안 및 설정
+.env
+
+# 💾 데이터베이스 및 캐시
+stella.db
+*.db-journal
+__pycache__/
+*.py[cod]
+
+# 📂 가상환경 및 기타
+venv/
+.vscode/
+.DS_Store
