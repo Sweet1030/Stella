@@ -26,7 +26,7 @@ async def load_cogs():
     await bot.load_extension("cogs.ai")
 
 def main():
-    bot.run(config.TOKEN)
+    bot.run(config.DISCORD_TOKEN)
 
 @bot.event
 async def setup_hook():
