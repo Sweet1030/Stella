@@ -23,6 +23,7 @@ async def on_ready():
 async def load_cogs():
     await bot.load_extension("cogs.moderation")
     await bot.load_extension("cogs.game")
+    await bot.load_extension("cogs.general")
 
 def main():
     bot.run(config.DISCORD_TOKEN)

@@ -22,8 +22,9 @@ class Moderation(commands.Cog):
             await interaction.response.send_message(f"❌ 최대 {MAX_CLEAR}개까지만 삭제할 수 있습니다.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True) # 삭제 작업이 오래 걸릴 수 있으므로 defer 처리
         deleted = await interaction.channel.purge(limit=amount)
-        await interaction.response.send_message(f"🧹 {len(deleted)}개의 메시지를 삭제했습니다.", ephemeral=True)
+        await interaction.followup.send(f"🧹 {len(deleted)}개의 메시지를 삭제했습니다.")
 
     @app_commands.command(name="타임아웃", description="유저를 일정 시간 동안 타임아웃 처리합니다.")
     @app_commands.describe(member="대상 유저", minutes="시간 (분)", reason="사유")
@@ -32,9 +33,19 @@ class Moderation(commands.Cog):
             await interaction.response.send_message("❌ 유저 관리 권한이 없습니다.", ephemeral=True)
             return
 
+        # 봇의 역할보다 대상의 역할이 높거나 같은지 확인
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.response.send_message("❌ 봇보다 높은(또는 같은) 역할의 유저는 타임아웃할 수 없습니다.", ephemeral=True)
+            return
+
         duration = datetime.timedelta(minutes=minutes)
-        await member.timeout(duration, reason=reason)
-        await interaction.response.send_message(f"🔇 {member.mention}님을 {minutes}분 동안 타임아웃 처리했습니다. (사유: {reason})")
+        try:
+            await member.timeout(duration, reason=reason)
+            await interaction.response.send_message(f"🔇 {member.mention}님을 {minutes}분 동안 타임아웃 처리했습니다. (사유: {reason})")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 권한이 부족하여 타임아웃 처리에 실패했습니다. (봇의 역할이 대상보다 낮거나, 권한 설정 문제)", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 오류가 발생했습니다: {e}", ephemeral=True)
 
     @app_commands.command(name="추방", description="유저를 서버에서 추방합니다.")
     @app_commands.describe(member="대상 유저", reason="사유")
@@ -108,7 +119,7 @@ class Moderation(commands.Cog):
         except Exception:
             dm_status = "DM 발송 실패 (알 수 없는 오류)"
 
-        await interaction.response.send_message(f"⚠️ {member.mention}님에게 경고를 부여했습니다. (누적 {count}회)\n사유: {reason}\n({dm_status})")
+        await interaction.response.send_message(f"⚠️ {member.mention}님에게 경고를 부여했습니다. (누적 {count}회)\n사유: {reason}\n({dm_status})", ephemeral=True)
 
     @app_commands.command(name="경고목록", description="유저의 경고 목록을 확인합니다.")
     async def warnings(self, interaction: discord.Interaction, member: discord.Member):
