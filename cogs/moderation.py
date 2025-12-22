@@ -12,6 +12,26 @@ class Moderation(commands.Cog):
         self.bot = bot
         self.service = ModerationService.get_instance()
 
+    async def _check_hierarchy(self, interaction: discord.Interaction, target: discord.Member) -> bool:
+        """대상이 명령어 실행자나 봇보다 높은 역할인지 확인합니다."""
+        if target.id == interaction.user.id:
+            await interaction.response.send_message("❌ 자신에게는 이 명령어를 사용할 수 없습니다.", ephemeral=True)
+            return False
+            
+        if target.id == self.bot.user.id:
+            await interaction.response.send_message("❌ 봇 스스로에게는 이 명령어를 사용할 수 없습니다.", ephemeral=True)
+            return False
+
+        if target.top_role >= interaction.user.top_role and interaction.guild.owner_id != interaction.user.id:
+            await interaction.response.send_message("❌ 자신보다 높은(또는 같은) 역할의 유저는 제어할 수 없습니다.", ephemeral=True)
+            return False
+            
+        if target.top_role >= interaction.guild.me.top_role:
+            await interaction.response.send_message("❌ 봇보다 높은(또는 같은) 역할의 유저는 제어할 수 없습니다.", ephemeral=True)
+            return False
+            
+        return True
+
     @app_commands.command(name="삭제", description="채팅을 삭제합니다. (최대 50개)")
     @app_commands.describe(amount="삭제할 메시지 수")
     async def clear(self, interaction: discord.Interaction, amount: int = 5):
@@ -23,9 +43,14 @@ class Moderation(commands.Cog):
             await interaction.response.send_message(f"❌ 최대 {MAX_CLEAR}개까지만 삭제할 수 있습니다.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True) # 삭제 작업이 오래 걸릴 수 있으므로 defer 처리
-        deleted = await interaction.channel.purge(limit=amount)
-        await interaction.followup.send(f"🧹 {len(deleted)}개의 메시지를 삭제했습니다.")
+        await interaction.response.defer(ephemeral=True)
+        try:
+            deleted = await interaction.channel.purge(limit=amount)
+            await interaction.followup.send(f"🧹 {len(deleted)}개의 메시지를 삭제했습니다.")
+        except discord.Forbidden:
+            await interaction.followup.send("❌ 메시지 삭제 권한이 부족합니다.")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 오류가 발생했습니다: {e}")
 
     @app_commands.command(name="타임아웃", description="유저를 일정 시간 동안 타임아웃 처리합니다.")
     @app_commands.describe(member="대상 유저", minutes="시간 (분)", reason="사유")
@@ -34,9 +59,7 @@ class Moderation(commands.Cog):
             await interaction.response.send_message("❌ 유저 관리 권한이 없습니다.", ephemeral=True)
             return
 
-        # 봇의 역할보다 대상의 역할이 높거나 같은지 확인
-        if member.top_role >= interaction.guild.me.top_role:
-            await interaction.response.send_message("❌ 봇보다 높은(또는 같은) 역할의 유저는 타임아웃할 수 없습니다.", ephemeral=True)
+        if not await self._check_hierarchy(interaction, member):
             return
 
         duration = datetime.timedelta(minutes=minutes)
@@ -44,7 +67,7 @@ class Moderation(commands.Cog):
             await member.timeout(duration, reason=reason)
             await interaction.response.send_message(f"🔇 {member.mention}님을 {minutes}분 동안 타임아웃 처리했습니다. (사유: {reason})")
         except discord.Forbidden:
-            await interaction.response.send_message("❌ 권한이 부족하여 타임아웃 처리에 실패했습니다. (봇의 역할이 대상보다 낮거나, 권한 설정 문제)", ephemeral=True)
+            await interaction.response.send_message("❌ 권한이 부족하여 타임아웃 처리에 실패했습니다.", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"❌ 오류가 발생했습니다: {e}", ephemeral=True)
 
@@ -55,8 +78,16 @@ class Moderation(commands.Cog):
             await interaction.response.send_message("❌ 추방 권한이 없습니다.", ephemeral=True)
             return
 
-        await member.kick(reason=reason)
-        await interaction.response.send_message(f"👢 {member.mention}님을 추방했습니다. (사유: {reason})")
+        if not await self._check_hierarchy(interaction, member):
+            return
+
+        try:
+            await member.kick(reason=reason)
+            await interaction.response.send_message(f"👢 {member.mention}님을 추방했습니다. (사유: {reason})")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 권한이 부족하여 추방에 실패했습니다.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 오류가 발생했습니다: {e}", ephemeral=True)
 
     @app_commands.command(name="차단", description="유저를 서버에서 차단합니다.")
     @app_commands.describe(member="대상 유저", delete_days="메시지 삭제 기간 (일)", reason="사유")
@@ -65,8 +96,16 @@ class Moderation(commands.Cog):
             await interaction.response.send_message("❌ 차단 권한이 없습니다.", ephemeral=True)
             return
 
-        await member.ban(delete_message_days=delete_days, reason=reason)
-        await interaction.response.send_message(f"🔨 {member.mention}님을 차단했습니다. (사유: {reason})")
+        if not await self._check_hierarchy(interaction, member):
+            return
+
+        try:
+            await member.ban(delete_message_days=delete_days, reason=reason)
+            await interaction.response.send_message(f"🔨 {member.mention}님을 차단했습니다. (사유: {reason})")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 권한이 부족하여 차단에 실패했습니다.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 오류가 발생했습니다: {e}", ephemeral=True)
 
     @app_commands.command(name="유저정보", description="유저의 상세 정보를 확인합니다.")
     async def userinfo(self, interaction: discord.Interaction, member: discord.Member = None):

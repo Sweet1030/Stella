@@ -2,6 +2,7 @@ import json
 import random
 from typing import List, Tuple, Optional
 from sqlalchemy import select
+from sqlalchemy.ext.mutable import MutableList
 from services.db import AsyncSessionLocal, User
 
 class EconomyService:
@@ -32,8 +33,13 @@ class EconomyService:
             user = User(
                 user_id=user_id,
                 balance=10000,
+                wins=0,
+                losses=0,
+                streak=0,
+                max_risk_win=0.0,
                 achievements=[],
-                active_quest=None  # 초기 퀘스트 없음
+                warnings=[],
+                active_quest=None
             )
             session.add(user)
             await session.commit()

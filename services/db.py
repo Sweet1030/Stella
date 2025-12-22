@@ -8,7 +8,7 @@ import config
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # 2. 드라이버 설정 로직 추가
-if DATABASE_URL:
+if DATABASE_URL and not DATABASE_URL.startswith("sqlite"):
     # Railway의 기본 postgres:// 주소를 SQLAlchemy가 인식하는 postgresql://로 변경합니다.
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -18,10 +18,15 @@ if DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 else:
     # 로컬 테스트용 (SQLite 비동기 드라이버 사용)
-    DATABASE_URL = "sqlite+aiosqlite:///./stella.db"
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./stella.db")
 
 # 3. SQLAlchemy 설정
-engine = create_async_engine(DATABASE_URL, echo=True)
+try:
+    engine = create_async_engine(DATABASE_URL, echo=True)
+except Exception as e:
+    print(f"❌ 데이터베이스 엔진 생성 실패: {e}")
+    # 엔진 생성 실패 시 폴백 (메모리 DB 등) 처리가 필요할 수 있으나 여기서는 로그만 남김
+    raise e
 AsyncSessionLocal = sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -46,8 +51,13 @@ class User(Base):
 
 # DB 초기화 함수
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("✅ 데이터베이스 초기화 완료")
+    except Exception as e:
+        print(f"❌ 데이터베이스 초기화 실패: {e}")
+        # gaierror 등 연결 오류 발생 시 여기서 캐치됨
 
 # DB 세션 생성 함수
 async def get_db():
