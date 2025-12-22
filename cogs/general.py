@@ -1,6 +1,6 @@
+from discord.ext import commands, tasks
 import discord
 from discord import app_commands
-from discord.ext import commands
 
 class HelpSelect(discord.ui.Select):
     def __init__(self, bot):
@@ -39,7 +39,6 @@ class HelpSelect(discord.ui.Select):
                     ))
         
         # 최대 25개 제한 (디스코드 UI 한계)
-        # 25개가 넘어가면 페이지네이션이 필요하지만, 현재는 25개 미만이므로 슬라이싱만 처리
         options = options[:25]
         
         super().__init__(
@@ -85,6 +84,18 @@ class HelpView(discord.ui.View):
 class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.update_status.start()
+
+    def cog_unload(self):
+        self.update_status.cancel()
+
+    @tasks.loop(minutes=10)
+    async def update_status(self):
+        """봇의 상태 메시지를 주기적으로 업데이트합니다."""
+        await self.bot.wait_until_ready()
+        guild_count = len(self.bot.guilds)
+        activity = discord.Game(name=f"🌠 {guild_count}개의 서버를 빛내는 중")
+        await self.bot.change_presence(activity=activity)
 
     @app_commands.command(name="핑", description="봇의 응답 속도를 확인합니다.")
     async def ping(self, interaction: discord.Interaction):
