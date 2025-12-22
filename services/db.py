@@ -1,10 +1,26 @@
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, String, BigInteger, Integer, Float, JSON
 import config
 
-# SQLAlchemy 기본 설정
-DATABASE_URL = config.DATABASE_URL
+# 1. 환경 변수에서 DATABASE_URL을 가져오되, Railway 설정을 우선합니다.
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+# 2. 드라이버 설정 로직 추가
+if DATABASE_URL:
+    # Railway의 기본 postgres:// 주소를 SQLAlchemy가 인식하는 postgresql://로 변경합니다.
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    
+    # 비동기 처리를 위해 드라이버(asyncpg)를 주소에 명시합니다.
+    if "postgresql+asyncpg" not in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    # 로컬 테스트용 (SQLite 비동기 드라이버 사용)
+    DATABASE_URL = "sqlite+aiosqlite:///./stella.db"
+
+# 3. SQLAlchemy 설정
 engine = create_async_engine(DATABASE_URL, echo=True)
 AsyncSessionLocal = sessionmaker(
     bind=engine,
@@ -14,10 +30,7 @@ AsyncSessionLocal = sessionmaker(
 
 Base = declarative_base()
 
-from sqlalchemy import Column, String, BigInteger, Integer, Float, JSON
-
-# ... 기존 Base = declarative_base() 코드 아래에 추가
-
+# 유저 테이블 정의
 class User(Base):
     __tablename__ = "users"
 
@@ -27,14 +40,16 @@ class User(Base):
     losses = Column(Integer, default=0)            # 패배 횟수
     streak = Column(Integer, default=0)            # 연속 승리
     max_risk_win = Column(Float, default=0.0)      # 최고 리스크 승리
-    achievements = Column(JSON, default=list)      # 업적 리스트 (JSON 형태로 저장)
-    warnings = Column(JSON, default=list)          # 경고 리스트 (JSON 형태로 저장)
-    active_quest = Column(JSON, nullable=True)     # 진행 중인 퀘스트 (JSON 형태로 저장)
+    achievements = Column(JSON, default=list)      # 업적 리스트
+    warnings = Column(JSON, default=list)          # 경고 리스트
+    active_quest = Column(JSON, nullable=True)     # 진행 중인 퀘스트
 
+# DB 초기화 함수
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+# DB 세션 생성 함수
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
