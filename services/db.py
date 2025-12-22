@@ -29,6 +29,7 @@ class User(Base):
     max_risk_win = Column(Float, default=0.0)      # 최고 리스크 승리
     achievements = Column(JSON, default=list)      # 업적 리스트 (JSON 형태로 저장)
     warnings = Column(JSON, default=list)          # 경고 리스트 (JSON 형태로 저장)
+    active_quest = Column(JSON, nullable=True)     # 진행 중인 퀘스트 (JSON 형태로 저장)
 
 async def init_db():
     async with engine.begin() as conn:

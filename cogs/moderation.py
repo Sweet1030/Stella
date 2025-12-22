@@ -93,7 +93,22 @@ class Moderation(commands.Cog):
             return
 
         count = await self.service.add_warning(member.id, reason, interaction.user.id)
-        await interaction.response.send_message(f"⚠️ {member.mention}님에게 경고를 부여했습니다. (누적 {count}회)\n사유: {reason}")
+        
+        # DM 발송
+        try:
+            embed = discord.Embed(title="⚠️ 경고 알림", color=discord.Color.red())
+            embed.add_field(name="서버", value=interaction.guild.name, inline=False)
+            embed.add_field(name="사유", value=reason, inline=False)
+            embed.add_field(name="누적 경고", value=f"{count}회", inline=False)
+            embed.set_footer(text=f"처리자: {interaction.user.name}")
+            await member.send(embed=embed)
+            dm_status = "DM 발송 성공"
+        except discord.Forbidden:
+            dm_status = "DM 발송 실패 (유저가 DM을 막아둠)"
+        except Exception:
+            dm_status = "DM 발송 실패 (알 수 없는 오류)"
+
+        await interaction.response.send_message(f"⚠️ {member.mention}님에게 경고를 부여했습니다. (누적 {count}회)\n사유: {reason}\n({dm_status})")
 
     @app_commands.command(name="경고목록", description="유저의 경고 목록을 확인합니다.")
     async def warnings(self, interaction: discord.Interaction, member: discord.Member):
