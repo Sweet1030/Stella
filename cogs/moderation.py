@@ -6,6 +6,7 @@ from services.moderation_service import ModerationService
 
 MAX_CLEAR = 50
 
+@app_commands.guild_only()
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -113,11 +114,11 @@ class Moderation(commands.Cog):
             embed.add_field(name="누적 경고", value=f"{count}회", inline=False)
             embed.set_footer(text=f"처리자: {interaction.user.name}")
             await member.send(embed=embed)
-            dm_status = "DM 발송 성공"
+            dm_status = "-# DM 발송 성공"
         except discord.Forbidden:
-            dm_status = "DM 발송 실패 (유저가 DM을 막아둠)"
+            dm_status = "-# DM 발송 실패 (유저가 DM을 막아둠)"
         except Exception:
-            dm_status = "DM 발송 실패 (알 수 없는 오류)"
+            dm_status = "-# DM 발송 실패 (알 수 없는 오류)"
 
         await interaction.response.send_message(f"⚠️ {member.mention}님에게 경고를 부여했습니다. (누적 {count}회)\n사유: {reason}\n({dm_status})", ephemeral=True)
 

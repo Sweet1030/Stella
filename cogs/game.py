@@ -202,17 +202,20 @@ class Game(commands.Cog):
         self.bot = bot
         self.economy = EconomyService.get_instance()
 
-    @discord.app_commands.command(name="잔액", description="자신의 현재 잔액을 확인합니다.")
+    # Create a group for game commands
+    game_group = app_commands.Group(name="게임", description="게임 관련 명령어 모음")
+
+    @game_group.command(name="잔액", description="자신의 현재 잔액을 확인합니다.")
     async def balance(self, interaction: discord.Interaction):
         bal = await self.economy.get_balance(interaction.user.id)
         await interaction.response.send_message(f"💰 {interaction.user.mention}님의 잔액: **{bal:,}원**")
 
-    @discord.app_commands.command(name="지원금", description="테스트용 지원금 5,000원을 받습니다.")
+    @game_group.command(name="지원금", description="테스트용 지원금 5,000원을 받습니다.")
     async def give(self, interaction: discord.Interaction):
         await self.economy.add_balance(interaction.user.id, 5000)
         await interaction.response.send_message("💵 지원금 **5,000원**이 지급되었습니다!")
 
-    @discord.app_commands.command(name="랭킹", description="보유 금액 랭킹 TOP 10을 확인합니다.")
+    @game_group.command(name="랭킹", description="보유 금액 랭킹 TOP 10을 확인합니다.")
     async def leaderboard(self, interaction: discord.Interaction):
         rankings = await self.economy.get_leaderboard()
         embed = discord.Embed(title="🏆 부자 랭킹 TOP 10", color=discord.Color.gold())
@@ -225,13 +228,13 @@ class Game(commands.Cog):
             embed.add_field(name=f"{idx}위. {name}", value=f"{bal:,}원", inline=False)
         await interaction.response.send_message(embed=embed)
 
-    @discord.app_commands.command(name="게임", description="돈을 걸고 게임을 진행합니다.")
-    async def gamble(self, interaction: discord.Interaction):
+    @game_group.command(name="시작", description="돈을 걸고 게임을 진행합니다.")
+    async def start_game(self, interaction: discord.Interaction):
         bal = await self.economy.get_balance(interaction.user.id)
         view = SettingsView(interaction.user.id, self.economy, bal)
         await interaction.response.send_message(embed=view.get_embed(), view=view)
 
-    @discord.app_commands.command(name="퀘스트", description="현재 진행 중인 퀘스트를 확인합니다.")
+    @game_group.command(name="퀘스트", description="현재 진행 중인 퀘스트를 확인합니다.")
     async def quest(self, interaction: discord.Interaction):
         quest = await self.economy.get_quest(interaction.user.id)
         if not quest:

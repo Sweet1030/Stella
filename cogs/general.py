@@ -9,18 +9,37 @@ class HelpSelect(discord.ui.Select):
         
         # 모든 코그의 커맨드를 수집
         self.all_commands = {}
-        for cog_name, cog in bot.cogs.items():
-            for cmd in cog.get_app_commands():
-                self.all_commands[cmd.name] = cmd
-                # description이 너무 길면 자름
-                desc = cmd.description[:90] + "..." if len(cmd.description) > 90 else cmd.description
-                options.append(discord.SelectOption(
-                    label=f"/{cmd.name}",
-                    description=desc,
-                    value=cmd.name
-                ))
+        # 코그 이름으로 정렬
+        sorted_cogs = sorted(bot.cogs.items(), key=lambda x: x[0])
+        
+        for cog_name, cog in sorted_cogs:
+            # 커맨드 이름으로 정렬
+            commands = sorted(cog.get_app_commands(), key=lambda c: c.name)
+            for cmd in commands:
+                # 그룹 커맨드(서브 커맨드가 있는 경우) 처리
+                if isinstance(cmd, app_commands.Group):
+                    sorted_subcommands = sorted(cmd.commands, key=lambda c: c.name)
+                    for sub in sorted_subcommands:
+                        full_name = f"{cmd.name} {sub.name}"
+                        self.all_commands[full_name] = sub
+                        
+                        desc = sub.description[:90] + "..." if len(sub.description) > 90 else sub.description
+                        options.append(discord.SelectOption(
+                            label=f"/{full_name}",
+                            description=desc,
+                            value=full_name
+                        ))
+                else:
+                    self.all_commands[cmd.name] = cmd
+                    desc = cmd.description[:90] + "..." if len(cmd.description) > 90 else cmd.description
+                    options.append(discord.SelectOption(
+                        label=f"/{cmd.name}",
+                        description=desc,
+                        value=cmd.name
+                    ))
         
         # 최대 25개 제한 (디스코드 UI 한계)
+        # 25개가 넘어가면 페이지네이션이 필요하지만, 현재는 25개 미만이므로 슬라이싱만 처리
         options = options[:25]
         
         super().__init__(
@@ -31,15 +50,15 @@ class HelpSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        cmd_name = self.values[0]
-        cmd = self.all_commands.get(cmd_name)
+        cmd_key = self.values[0]
+        cmd = self.all_commands.get(cmd_key)
         
         if not cmd:
             await interaction.response.send_message("❌ 명령어를 찾을 수 없습니다.", ephemeral=True)
             return
 
         embed = discord.Embed(
-            title=f"/{cmd.name} 상세 정보",
+            title=f"/{cmd_key} 상세 정보",
             description=cmd.description,
             color=discord.Color.blue()
         )
@@ -54,7 +73,6 @@ class HelpSelect(discord.ui.Select):
         else:
             embed.add_field(name="매개변수", value="없음", inline=False)
             
-        # 팁 추가
         embed.set_footer(text="메뉴에서 다른 명령어를 선택하여 정보를 확인할 수 있습니다.")
         
         await interaction.response.edit_message(embed=embed)
@@ -87,14 +105,21 @@ class General(commands.Cog):
             color=discord.Color.blue()
         )
 
-        # 기본 목록 표시 (카테고리별)
-        for name, cog in self.bot.cogs.items():
-            commands = cog.get_app_commands()
-            if commands:
-                command_list = [f"`/{cmd.name}`" for cmd in commands]
-                value_text = ", ".join(command_list)
-                if value_text:
-                    embed.add_field(name=f"📂 {name}", value=value_text, inline=False)
+        sorted_cogs = sorted(self.bot.cogs.items(), key=lambda x: x[0])
+        for name, cog in sorted_cogs:
+            commands_list = []
+            sorted_commands = sorted(cog.get_app_commands(), key=lambda c: c.name)
+            for cmd in sorted_commands:
+                if isinstance(cmd, app_commands.Group):
+                    sorted_subcommands = sorted(cmd.commands, key=lambda c: c.name)
+                    for sub in sorted_subcommands:
+                        commands_list.append(f"`/{cmd.name} {sub.name}`")
+                else:
+                    commands_list.append(f"`/{cmd.name}`")
+            
+            if commands_list:
+                value_text = ", ".join(commands_list)
+                embed.add_field(name=f"📂 {name}", value=value_text, inline=False)
         
         view = HelpView(self.bot)
         await interaction.response.send_message(embed=embed, view=view)
