@@ -1,4 +1,3 @@
-import json
 import random
 from typing import List, Tuple, Optional
 from sqlalchemy import select
@@ -140,6 +139,35 @@ class EconomyService:
             user = await self.get_user(session, user_id)
             user.active_quest = None
             await session.commit()
+
+    async def get_achievements_progress(self, user_id: int) -> List[dict]:
+        """업적 목록과 달성 여부, 진행 상황을 반환합니다."""
+        async with AsyncSessionLocal() as session:
+            user = await self.get_user(session, user_id)
+            user_ach = list(user.achievements) if user.achievements else []
+            
+            result = []
+            for ach in self.achievements:
+                progress_info = {
+                    "id": ach["id"],
+                    "name": ach["name"],
+                    "reward": ach["reward"],
+                    "completed": ach["id"] in user_ach,
+                    "progress": "",
+                }
+                
+                # 진행 상황 계산
+                if ach["id"] == "first_win":
+                    progress_info["progress"] = f"{min(user.wins, 1)}/1 승"
+                elif ach["id"] == "lucky_streak_3":
+                    progress_info["progress"] = f"{min(max(user.streak, 0), 3)}/3 연승"
+                elif ach["id"] == "lucky_streak_5":
+                    progress_info["progress"] = f"{min(max(user.streak, 0), 5)}/5 연승"
+                elif ach["id"] == "bad_luck_3":
+                    progress_info["progress"] = f"{min(abs(min(user.streak, 0)), 3)}/3 연패"
+                
+                result.append(progress_info)
+            return result
 
     async def get_leaderboard(self) -> List[Tuple[int, int]]:
         async with AsyncSessionLocal() as session:

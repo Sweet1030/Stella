@@ -39,8 +39,9 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 async def load_cogs():
     await bot.load_extension("cogs.moderation")
-    await bot.load_extension("cogs.game")
+    await bot.load_extension("cogs.gambling")
     await bot.load_extension("cogs.general")
+    await bot.load_extension("cogs.upgrade")
 
 def main():
     bot.run(config.DISCORD_TOKEN)

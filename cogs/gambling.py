@@ -2,7 +2,7 @@ from discord.ext import commands
 import discord
 from discord import app_commands
 import random
-from services.economy import EconomyService
+from services.quest import EconomyService
 
 class CustomInputModal(discord.ui.Modal, title="게임 설정 직접 입력"):
     amount = discord.ui.TextInput(label="배팅 금액", placeholder="예: 5000 (최소 1,000)", min_length=1)
@@ -128,6 +128,12 @@ class QuestView(discord.ui.View):
         self.user_id = user_id
         self.economy = economy
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("자신의 퀘스트만 조작할 수 있습니다.", ephemeral=True)
+            return False
+        return True
+
     @discord.ui.button(label="수락", style=discord.ButtonStyle.success)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="퀘스트를 수락했습니다! 다음 게임부터 적용됩니다.", view=None, embed=None)
@@ -146,6 +152,12 @@ class SettingsView(discord.ui.View):
         self.amount = 1000
         self.probability = 0.5
         self.update_embed_data()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("자신의 게임 설정만 조작할 수 있습니다.", ephemeral=True)
+            return False
+        return True
 
     def update_embed_data(self):
         self.multiplier = round(0.99 / self.probability, 2)
@@ -203,7 +215,7 @@ class Game(commands.Cog):
         self.economy = EconomyService.get_instance()
 
     # Create a group for game commands
-    game_group = app_commands.Group(name="게임", description="게임 관련 명령어 모음")
+    game_group = app_commands.Group(name="도박", description="도박 관련 명령어 모음")
 
     @game_group.command(name="잔액", description="자신의 현재 잔액을 확인합니다.")
     async def balance(self, interaction: discord.Interaction):
@@ -223,7 +235,7 @@ class Game(commands.Cog):
             try:
                 user = await self.bot.fetch_user(int(uid))
                 name = user.name
-            except:
+            except Exception:
                 name = "Unknown"
             embed.add_field(name=f"{idx}위. {name}", value=f"{bal:,}원", inline=False)
         await interaction.response.send_message(embed=embed)
@@ -247,6 +259,28 @@ class Game(commands.Cog):
             embed.add_field(name="진행 상황", value=f"{quest['current']} / {quest['target']} 회", inline=True)
             embed.add_field(name="성공 보상", value=f"+{quest['reward']:,}원", inline=True)
             embed.add_field(name="실패 페널티", value=f"-{quest['penalty']:,}원", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+
+    @game_group.command(name="업적", description="업적 목록과 진행 상황을 확인합니다.")
+    async def achievements(self, interaction: discord.Interaction):
+        achievements = await self.economy.get_achievements_progress(interaction.user.id)
+        
+        embed = discord.Embed(title="🏆 업적 목록", color=discord.Color.gold())
+        
+        for ach in achievements:
+            if ach["completed"]:
+                status = "✅ 달성 완료"
+                name = f"🏆 {ach['name']}"
+            else:
+                status = f"📊 {ach['progress']}"
+                name = f"🔒 {ach['name']}"
+            
+            embed.add_field(
+                name=name,
+                value=f"{status}\n보상: **{ach['reward']:,}원**",
+                inline=True
+            )
         
         await interaction.response.send_message(embed=embed)
 

@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy import select
 from services.db import AsyncSessionLocal, User
-from services.economy import EconomyService
+from services.quest import EconomyService
 
 class ModerationService:
     _instance = None

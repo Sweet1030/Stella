@@ -57,6 +57,8 @@ class User(Base):
     achievements = Column(JSON, default=list)      # 업적 리스트
     warnings = Column(JSON, default=list)          # 경고 리스트
     active_quest = Column(JSON, nullable=True)     # 진행 중인 퀘스트
+    gear_level = Column(Integer, default=1)        # 현재 장비 레벨
+    max_gear_level = Column(Integer, default=1)    # 역대 최고 장비 레벨
 
 # DB 초기화 함수
 async def init_db():
