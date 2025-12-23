@@ -1,7 +1,7 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, BigInteger, Integer, Float, JSON, DateTime
+from sqlalchemy import Column, String, BigInteger, Integer, Float, JSON, DateTime, Date
 import config
 
 # 1. 환경 변수에서 DATABASE_URL을 가져오되, Railway 설정을 우선합니다.
@@ -63,6 +63,8 @@ class User(Base):
     max_gambling_win = Column(Integer, default=0)   # 도박 최고 당첨금
     total_gambling_win = Column(Integer, default=0) # 도박 누적 당첨금
     last_claim_time = Column(DateTime, nullable=True) # 마지막 지원금 수령 시간
+    last_attendance_date = Column(Date, nullable=True) # 마지막 출석 날짜
+    attendance_streak = Column(Integer, default=0)     # 연속 출석 일수
 
 # DB 초기화 함수
 async def init_db():

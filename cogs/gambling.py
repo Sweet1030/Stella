@@ -56,6 +56,7 @@ class GambleView(discord.ui.View):
     async def on_timeout(self):
         if self.started and not self.game_over and self.current_pot > 0:
             await self.economy.add_balance(self.user_id, self.current_pot)
+            await self.economy.record_payout(self.user_id, self.current_pot)
 
     @discord.ui.button(label="🎲 게임 시작", style=discord.ButtonStyle.green)
     async def start_game(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -112,7 +113,10 @@ class GambleView(discord.ui.View):
     async def stop_game(self, interaction: discord.Interaction):
         self.game_over = True
         await self.economy.add_balance(self.user_id, self.current_pot)
-        embed = discord.Embed(title="💰 게임 종료", description=f"**{self.current_pot:,}원**을 획득했습니다!", color=discord.Color.green())
+        notifications = await self.economy.record_payout(self.user_id, self.current_pot)
+        
+        note_text = "\n" + "\n".join(notifications) if notifications else ""
+        embed = discord.Embed(title="💰 게임 종료", description=f"**{self.current_pot:,}원**을 획득했습니다!{note_text}", color=discord.Color.green())
         await interaction.response.edit_message(embed=embed, view=None)
         self.stop()
 
@@ -235,6 +239,24 @@ class Game(commands.Cog):
             minutes = remaining // 60
             seconds = remaining % 60
             await interaction.response.send_message(f"⏳ 아직 지원금을 받을 수 없습니다! (**{minutes}분 {seconds}초** 남음)", ephemeral=True)
+
+    @app_commands.command(name="출석", description="일일 출석 체크를 하고 100,000원을 받습니다.")
+    async def attendance(self, interaction: discord.Interaction):
+        success, message, reward, streak = await self.economy.attend(interaction.user.id)
+        
+        if success:
+            bal = await self.economy.get_balance(interaction.user.id)
+            embed = discord.Embed(
+                title="📅 출석 체크 완료!",
+                description=message,
+                color=discord.Color.green()
+            )
+            embed.add_field(name="연속 출석", value=f"🔥 **{streak}일째**", inline=True)
+            embed.add_field(name="현재 잔액", value=f"💰 **{bal:,}원**", inline=True)
+            embed.set_footer(text="매일 출석하고 보너스를 획득하세요!")
+            await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message(f"❌ {message}", ephemeral=True)
 
     @game_group.command(name="랭킹", description="도박 총 획득 금액 랭킹 TOP 10을 확인합니다.")
     async def leaderboard(self, interaction: discord.Interaction):

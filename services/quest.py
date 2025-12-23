@@ -44,7 +44,9 @@ class EconomyService:
                 gear_name="기본 장비",
                 max_gambling_win=0,
                 total_gambling_win=0,
-                last_claim_time=None
+                last_claim_time=None,
+                last_attendance_date=None,
+                attendance_streak=0
             )
             session.add(user)
             await session.commit()
@@ -82,14 +84,6 @@ class EconomyService:
                 user.streak = max(1, user.streak + 1)
                 if risk < user.max_risk_win:
                     user.max_risk_win = risk
-                
-                # 누적 당첨금 기록
-                user.total_gambling_win += amount
-
-                # 최고 당첨금 기록
-                if amount > user.max_gambling_win:
-                    user.max_gambling_win = amount
-                    notifications.append(f"✨ **도박 최고 당첨금 갱신!** (**{amount:,}원**)")
             else:
                 user.losses += 1
                 user.streak = min(-1, user.streak - 1)
@@ -122,6 +116,24 @@ class EconomyService:
 
             session.add(user)
             await session.commit()
+            return notifications
+
+    async def record_payout(self, user_id: int, amount: int) -> List[str]:
+        """최종 배당금을 지급할 때 호출하여 랭킹용 데이터를 갱신합니다."""
+        async with AsyncSessionLocal() as session:
+            user = await self.get_user(session, user_id)
+            notifications = []
+            
+            if amount > 0:
+                # 누적 당첨금 기록
+                user.total_gambling_win += amount
+                
+                # 최고 당첨금 기록
+                if amount > user.max_gambling_win:
+                    user.max_gambling_win = amount
+                    notifications.append(f"✨ **도박 최고 당첨금 갱신!** (**{amount:,}원**)")
+                
+                await session.commit()
             return notifications
 
     async def assign_quest(self, user_id: int) -> Optional[dict]:
@@ -215,3 +227,28 @@ class EconomyService:
             user.last_claim_time = now
             await session.commit()
             return True, None
+
+    async def attend(self, user_id: int) -> Tuple[bool, str, int, int]:
+        """일일 출석 체크를 수행합니다. (보상: 100,000원)"""
+        from datetime import date, timedelta
+        
+        async with AsyncSessionLocal() as session:
+            user = await self.get_user(session, user_id)
+            today = date.today()
+            
+            # 오늘 이미 출석했는지 확인
+            if user.last_attendance_date == today:
+                return False, "이미 오늘 출석 체크를 완료했습니다.", 0, user.attendance_streak
+
+            # 연속 출석 확인
+            if user.last_attendance_date == today - timedelta(days=1):
+                user.attendance_streak += 1
+            else:
+                user.attendance_streak = 1
+            
+            reward = 100000
+            user.balance += reward
+            user.last_attendance_date = today
+            
+            await session.commit()
+            return True, f"출석 보상 **{reward:,}원**이 지급되었습니다!", reward, user.attendance_streak
