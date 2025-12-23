@@ -5,6 +5,25 @@ import random
 from services.upgrade_service import UpgradeService
 
 
+class GearNamingModal(discord.ui.Modal, title="장비 이름 설정"):
+    name = discord.ui.TextInput(
+        label="장비의 이름을 정해주세요",
+        placeholder="최대 10자까지 정할 수 있습니다.",
+        min_length=1,
+        max_length=10
+    )
+
+    def __init__(self, upgrade_service: UpgradeService, callback):
+        super().__init__()
+        self.upgrade_service = upgrade_service
+        self.callback = callback
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.upgrade_service.set_gear_name(interaction.user.id, self.name.value)
+        await interaction.response.send_message(f"✨ 장비의 이름이 **{self.name.value}**(으)로 설정되었습니다!", ephemeral=True)
+        await self.callback(interaction)
+
+
 class MinigameView(discord.ui.View):
     """1~5 숫자 맞추기 미니게임"""
     def __init__(self, user_id: int, callback):
@@ -134,10 +153,10 @@ class UpgradeConfirmView(discord.ui.View):
             embed.add_field(name="소모 비용", value=f"{result['cost']:,}원", inline=True)
         
         # 다시 강화 버튼 제공
-        new_level, _ = await self.upgrade_service.get_user_gear(self.user_id)
+        new_level, _, gear_name = await self.upgrade_service.get_user_gear(self.user_id)
         new_balance = await self.upgrade_service.get_balance(self.user_id)
         
-        view = UpgradeMainView(self.user_id, self.upgrade_service, new_level, new_balance)
+        view = UpgradeMainView(self.user_id, self.upgrade_service, new_level, new_balance, gear_name=gear_name)
         await interaction.response.edit_message(embed=embed, view=view)
     
     @discord.ui.button(label="🎯 미니게임 (확률+3%)", style=discord.ButtonStyle.primary)
@@ -190,9 +209,9 @@ class UpgradeConfirmView(discord.ui.View):
             
             embed.add_field(name="소모 비용", value=f"{result['cost']:,}원", inline=True)
             
-            new_level, _ = await self.upgrade_service.get_user_gear(self.user_id)
+            new_level, _, gear_name = await self.upgrade_service.get_user_gear(self.user_id)
             new_balance = await self.upgrade_service.get_balance(self.user_id)
-            view = UpgradeMainView(self.user_id, self.upgrade_service, new_level, new_balance)
+            view = UpgradeMainView(self.user_id, self.upgrade_service, new_level, new_balance, gear_name=gear_name)
             await minigame_interaction.followup.send(embed=embed, view=view)
         
         view = MinigameView(self.user_id, after_minigame)
@@ -205,12 +224,13 @@ class UpgradeConfirmView(discord.ui.View):
 
 class UpgradeMainView(discord.ui.View):
     """메인 강화 UI"""
-    def __init__(self, user_id: int, upgrade_service: UpgradeService, level: int, balance: int):
+    def __init__(self, user_id: int, upgrade_service: UpgradeService, level: int, balance: int, gear_name: str = "기본 장비"):
         super().__init__(timeout=120)
         self.user_id = user_id
         self.upgrade_service = upgrade_service
         self.level = level
         self.balance = balance
+        self.gear_name = gear_name
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -227,7 +247,7 @@ class UpgradeMainView(discord.ui.View):
         tier_info = self.upgrade_service.get_tier_info(self.level)
         
         embed = discord.Embed(
-            title="🔨 장비 강화",
+            title=f"🔨 장비 강화: {self.gear_name}",
             color=tier_color
         )
         embed.add_field(name="현재 레벨", value=f"{tier_emoji} **Lv. {self.level}** ({tier_name})", inline=False)
@@ -278,7 +298,7 @@ class UpgradeMainView(discord.ui.View):
     
     @discord.ui.button(label="🔄 새로고침", style=discord.ButtonStyle.secondary)
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.level, _ = await self.upgrade_service.get_user_gear(self.user_id)
+        self.level, _, self.gear_name = await self.upgrade_service.get_user_gear(self.user_id)
         self.balance = await self.upgrade_service.get_balance(self.user_id)
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
@@ -293,15 +313,27 @@ class Upgrade(commands.Cog):
     
     @upgrade_group.command(name="시작", description="장비 강화를 시작합니다.")
     async def start(self, interaction: discord.Interaction):
-        level, max_level = await self.upgrade_service.get_user_gear(interaction.user.id)
+        level, max_level, gear_name = await self.upgrade_service.get_user_gear(interaction.user.id)
         balance = await self.upgrade_service.get_balance(interaction.user.id)
         
-        view = UpgradeMainView(interaction.user.id, self.upgrade_service, level, balance)
-        await interaction.response.send_message(embed=view.get_embed(), view=view)
+        async def show_upgrade_ui(it: discord.Interaction):
+            lvl, _, name = await self.upgrade_service.get_user_gear(interaction.user.id)
+            bal = await self.upgrade_service.get_balance(interaction.user.id)
+            view = UpgradeMainView(interaction.user.id, self.upgrade_service, lvl, bal, gear_name=name)
+            if it.response.is_done():
+                await it.followup.send(embed=view.get_embed(), view=view)
+            else:
+                await it.response.send_message(embed=view.get_embed(), view=view)
+
+        if level <= 1 and gear_name == "기본 장비":
+            modal = GearNamingModal(self.upgrade_service, show_upgrade_ui)
+            await interaction.response.send_modal(modal)
+        else:
+            await show_upgrade_ui(interaction)
     
     @upgrade_group.command(name="정보", description="현재 장비 정보를 확인합니다.")
     async def info(self, interaction: discord.Interaction):
-        level, max_level = await self.upgrade_service.get_user_gear(interaction.user.id)
+        level, max_level, gear_name = await self.upgrade_service.get_user_gear(interaction.user.id)
         balance = await self.upgrade_service.get_balance(interaction.user.id)
         
         tier_name = self.upgrade_service.get_tier_name(level)
@@ -311,13 +343,13 @@ class Upgrade(commands.Cog):
         rate = self.upgrade_service.calculate_success_rate(level)
         
         embed = discord.Embed(
-            title="📊 장비 정보",
+            title=f"📊 장비 정보: {gear_name}",
             color=tier_color
         )
         embed.add_field(name="현재 레벨", value=f"{tier_emoji} **Lv. {level}**", inline=True)
         embed.add_field(name="최고 기록", value=f"**Lv. {max_level}**", inline=True)
         embed.add_field(name="현재 등급", value=tier_name, inline=True)
-        embed.add_field(name="다음 강화 비용", value=f"{cost:,}원", inline=True)
+        embed.add_field(name="다음 강화 비용", value=f"{cost:,}원", inline=False)
         embed.add_field(name="성공 확률", value=f"{rate*100:.1f}%", inline=True)
         embed.add_field(name="보유 잔액", value=f"{balance:,}원", inline=True)
         
@@ -335,7 +367,7 @@ class Upgrade(commands.Cog):
         if not rankings:
             embed.description = "아직 랭킹 데이터가 없습니다."
         else:
-            for idx, (uid, gear_lv, max_lv) in enumerate(rankings, 1):
+            for idx, (uid, gear_lv, max_lv, gear_name) in enumerate(rankings, 1):
                 try:
                     user = await self.bot.fetch_user(int(uid))
                     name = user.name
@@ -348,7 +380,7 @@ class Upgrade(commands.Cog):
                 medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
                 embed.add_field(
                     name=f"{medal} {name}",
-                    value=f"{tier_emoji} Lv. {gear_lv} (최고: {max_lv})",
+                    value=f"{tier_emoji} **{gear_name}** (Lv. {gear_lv})",
                     inline=False
                 )
         

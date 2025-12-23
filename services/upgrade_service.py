@@ -103,14 +103,23 @@ class UpgradeService:
                 return value
         return values[-1]
 
-    async def get_user_gear(self, user_id: int) -> Tuple[int, int]:
-        """유저의 장비 정보 조회 (현재 레벨, 최고 레벨)"""
+    async def get_user_gear(self, user_id: int) -> Tuple[int, int, str]:
+        """유저의 장비 정보 조회 (현재 레벨, 최고 레벨, 장비 이름)"""
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(User).where(User.user_id == user_id))
             user = result.scalar_one_or_none()
             if user:
-                return user.gear_level or 1, user.max_gear_level or 1
-            return 1, 1
+                return user.gear_level or 1, user.max_gear_level or 1, user.gear_name or "기본 장비"
+            return 1, 1, "기본 장비"
+
+    async def set_gear_name(self, user_id: int, name: str):
+        """장비 이름을 설정합니다."""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(User).where(User.user_id == user_id))
+            user = result.scalar_one_or_none()
+            if user:
+                user.gear_name = name
+                await session.commit()
 
     async def get_balance(self, user_id: int) -> int:
         """유저의 잔액 조회"""
@@ -261,7 +270,7 @@ class UpgradeService:
         """장비 레벨 랭킹 TOP 10"""
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(User.user_id, User.gear_level, User.max_gear_level)
+                select(User.user_id, User.gear_level, User.max_gear_level, User.gear_name)
                 .where(User.gear_level > 1)
                 .order_by(User.gear_level.desc())
                 .limit(10)

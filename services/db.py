@@ -1,7 +1,7 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, BigInteger, Integer, Float, JSON
+from sqlalchemy import Column, String, BigInteger, Integer, Float, JSON, DateTime
 import config
 
 # 1. 환경 변수에서 DATABASE_URL을 가져오되, Railway 설정을 우선합니다.
@@ -59,6 +59,10 @@ class User(Base):
     active_quest = Column(JSON, nullable=True)     # 진행 중인 퀘스트
     gear_level = Column(Integer, default=1)        # 현재 장비 레벨
     max_gear_level = Column(Integer, default=1)    # 역대 최고 장비 레벨
+    gear_name = Column(String, default="기본 장비") # 장비 이름
+    max_gambling_win = Column(Integer, default=0)   # 도박 최고 당첨금
+    total_gambling_win = Column(Integer, default=0) # 도박 누적 당첨금
+    last_claim_time = Column(DateTime, nullable=True) # 마지막 지원금 수령 시간
 
 # DB 초기화 함수
 async def init_db():

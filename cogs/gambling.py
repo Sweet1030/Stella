@@ -73,13 +73,13 @@ class GambleView(discord.ui.View):
         roll = random.random()
         success = roll < self.probability
         
-        notifications = await self.economy.record_game_result(self.user_id, success, self.probability)
-        
         embed = discord.Embed(title="🎲 게임 결과", color=discord.Color.gold() if success else discord.Color.red())
-        note_text = "\n".join(notifications) if notifications else ""
         
         if success:
             self.current_pot = int(self.current_pot * self.multiplier)
+            notifications = await self.economy.record_game_result(self.user_id, True, self.current_pot, self.probability)
+            
+            note_text = "\n".join(notifications) if notifications else ""
             embed.description = f"**성공!** 🎉\n\n현재 누적 금액: **{self.current_pot:,}원**\n(배율: {self.multiplier}x / 확률: {int(self.probability*100)}%)\n\n{note_text}"
             
             self.clear_items()
@@ -93,6 +93,9 @@ class GambleView(discord.ui.View):
             
             await interaction.response.edit_message(embed=embed, view=self)
         else:
+            notifications = await self.economy.record_game_result(self.user_id, False, 0, self.probability)
+            note_text = "\n".join(notifications) if notifications else ""
+            
             self.current_pot = 0
             self.game_over = True
             embed.description = f"**실패...** 💥\n모든 금액을 잃었습니다.\n\n{note_text}"
@@ -217,27 +220,40 @@ class Game(commands.Cog):
     # Create a group for game commands
     game_group = app_commands.Group(name="도박", description="도박 관련 명령어 모음")
 
-    @game_group.command(name="잔액", description="자신의 현재 잔액을 확인합니다.")
+    @app_commands.command(name="잔액", description="자신의 현재 잔액을 확인합니다.")
     async def balance(self, interaction: discord.Interaction):
         bal = await self.economy.get_balance(interaction.user.id)
         await interaction.response.send_message(f"💰 {interaction.user.mention}님의 잔액: **{bal:,}원**")
 
-    @game_group.command(name="지원금", description="테스트용 지원금 5,000원을 받습니다.")
+    @app_commands.command(name="지원금", description="10분마다 지원금 5,000원을 받습니다.")
     async def give(self, interaction: discord.Interaction):
-        await self.economy.add_balance(interaction.user.id, 5000)
-        await interaction.response.send_message("💵 지원금 **5,000원**이 지급되었습니다!")
+        success, remaining = await self.economy.claim_reward(interaction.user.id)
+        
+        if success:
+            await interaction.response.send_message("💵 지원금 **5,000원**이 지급되었습니다! (다음 지급까지 10분)")
+        else:
+            minutes = remaining // 60
+            seconds = remaining % 60
+            await interaction.response.send_message(f"⏳ 아직 지원금을 받을 수 없습니다! (**{minutes}분 {seconds}초** 남음)", ephemeral=True)
 
-    @game_group.command(name="랭킹", description="보유 금액 랭킹 TOP 10을 확인합니다.")
+    @game_group.command(name="랭킹", description="도박 총 획득 금액 랭킹 TOP 10을 확인합니다.")
     async def leaderboard(self, interaction: discord.Interaction):
         rankings = await self.economy.get_leaderboard()
-        embed = discord.Embed(title="🏆 부자 랭킹 TOP 10", color=discord.Color.gold())
-        for idx, (uid, bal) in enumerate(rankings, 1):
-            try:
-                user = await self.bot.fetch_user(int(uid))
-                name = user.name
-            except Exception:
-                name = "Unknown"
-            embed.add_field(name=f"{idx}위. {name}", value=f"{bal:,}원", inline=False)
+        embed = discord.Embed(title="🏆 도박 총 획득 금액 랭킹 TOP 10", color=discord.Color.gold())
+        
+        if not rankings:
+            embed.description = "아직 랭크된 유저가 없습니다."
+        else:
+            for idx, (uid, amount) in enumerate(rankings, 1):
+                try:
+                    user = await self.bot.fetch_user(int(uid))
+                    name = user.name
+                except Exception:
+                    name = "Unknown"
+                
+                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}위"
+                embed.add_field(name=f"{medal}. {name}", value=f"총 획득: **{amount:,}원**", inline=False)
+        
         await interaction.response.send_message(embed=embed)
 
     @game_group.command(name="시작", description="돈을 걸고 게임을 진행합니다.")
@@ -264,24 +280,30 @@ class Game(commands.Cog):
 
     @game_group.command(name="업적", description="업적 목록과 진행 상황을 확인합니다.")
     async def achievements(self, interaction: discord.Interaction):
-        achievements = await self.economy.get_achievements_progress(interaction.user.id)
+        ach_data = await self.economy.get_achievements_progress(interaction.user.id)
         
-        embed = discord.Embed(title="🏆 업적 목록", color=discord.Color.gold())
+        embed = discord.Embed(
+            title="🏆 업적 목록",
+            description="목표를 달성하고 보상을 획득하세요!",
+            color=discord.Color.gold()
+        )
         
-        for ach in achievements:
-            if ach["completed"]:
-                status = "✅ 달성 완료"
-                name = f"🏆 {ach['name']}"
-            else:
-                status = f"📊 {ach['progress']}"
-                name = f"🔒 {ach['name']}"
+        for ach in ach_data:
+            status = "✅ 달성됨" if ach["completed"] else "🔒 진행 중"
+            indicator = "⭐" if ach["completed"] else "▫️"
+            
+            value = f"{indicator} **{status}**\n"
+            if not ach["completed"]:
+                value += f"📊 진행도: `{ach['progress']}`\n"
+            value += f"💰 보상: **{ach['reward']:,}원**"
             
             embed.add_field(
-                name=name,
-                value=f"{status}\n보상: **{ach['reward']:,}원**",
+                name=f"{'🏆' if ach['completed'] else '🏷️'} {ach['name']}",
+                value=value,
                 inline=True
             )
         
+        embed.set_footer(text="꾸준히 플레이하여 모든 업적을 달성해보세요!")
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):

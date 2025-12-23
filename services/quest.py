@@ -38,7 +38,13 @@ class EconomyService:
                 max_risk_win=0.0,
                 achievements=[],
                 warnings=[],
-                active_quest=None
+                active_quest=None,
+                gear_level=1,
+                max_gear_level=1,
+                gear_name="기본 장비",
+                max_gambling_win=0,
+                total_gambling_win=0,
+                last_claim_time=None
             )
             session.add(user)
             await session.commit()
@@ -65,7 +71,7 @@ class EconomyService:
             await session.commit()
             return True
 
-    async def record_game_result(self, user_id: int, won: bool, risk: float = 0.5) -> List[str]:
+    async def record_game_result(self, user_id: int, won: bool, amount: int = 0, risk: float = 0.5) -> List[str]:
         async with AsyncSessionLocal() as session:
             user = await self.get_user(session, user_id)
             notifications = []
@@ -76,6 +82,14 @@ class EconomyService:
                 user.streak = max(1, user.streak + 1)
                 if risk < user.max_risk_win:
                     user.max_risk_win = risk
+                
+                # 누적 당첨금 기록
+                user.total_gambling_win += amount
+
+                # 최고 당첨금 기록
+                if amount > user.max_gambling_win:
+                    user.max_gambling_win = amount
+                    notifications.append(f"✨ **도박 최고 당첨금 갱신!** (**{amount:,}원**)")
             else:
                 user.losses += 1
                 user.streak = min(-1, user.streak - 1)
@@ -156,15 +170,18 @@ class EconomyService:
                     "progress": "",
                 }
                 
-                # 진행 상황 계산
+                # 진행 상황 계산 (None 대비 안전한 처리)
+                u_wins = user.wins or 0
+                u_streak = user.streak or 0
+
                 if ach["id"] == "first_win":
-                    progress_info["progress"] = f"{min(user.wins, 1)}/1 승"
+                    progress_info["progress"] = f"{min(u_wins, 1)}/1 승"
                 elif ach["id"] == "lucky_streak_3":
-                    progress_info["progress"] = f"{min(max(user.streak, 0), 3)}/3 연승"
+                    progress_info["progress"] = f"{min(max(u_streak, 0), 3)}/3 연승"
                 elif ach["id"] == "lucky_streak_5":
-                    progress_info["progress"] = f"{min(max(user.streak, 0), 5)}/5 연승"
+                    progress_info["progress"] = f"{min(max(u_streak, 0), 5)}/5 연승"
                 elif ach["id"] == "bad_luck_3":
-                    progress_info["progress"] = f"{min(abs(min(user.streak, 0)), 3)}/3 연패"
+                    progress_info["progress"] = f"{min(abs(min(u_streak, 0)), 3)}/3 연패"
                 
                 result.append(progress_info)
             return result
@@ -172,6 +189,29 @@ class EconomyService:
     async def get_leaderboard(self) -> List[Tuple[int, int]]:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(User.user_id, User.balance).order_by(User.balance.desc()).limit(10)
+                select(User.user_id, User.total_gambling_win)
+                .where(User.total_gambling_win > 0)
+                .order_by(User.total_gambling_win.desc())
+                .limit(10)
             )
             return result.all()
+
+    async def claim_reward(self, user_id: int) -> Tuple[bool, Optional[int]]:
+        """10분마다 지원금 5,000원을 수령합니다."""
+        from datetime import datetime, timedelta
+        
+        async with AsyncSessionLocal() as session:
+            user = await self.get_user(session, user_id)
+            now = datetime.now()
+            
+            if user.last_claim_time:
+                cooldown = timedelta(minutes=10)
+                next_claim = user.last_claim_time + cooldown
+                if now < next_claim:
+                    remaining = int((next_claim - now).total_seconds())
+                    return False, remaining
+            
+            user.balance += 5000
+            user.last_claim_time = now
+            await session.commit()
+            return True, None
