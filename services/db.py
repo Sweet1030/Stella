@@ -66,12 +66,44 @@ class User(Base):
     last_attendance_date = Column(Date, nullable=True) # 마지막 출석 날짜
     attendance_streak = Column(Integer, default=0)     # 연속 출석 일수
 
+async def apply_migrations():
+    """누락된 컬럼을 자동으로 추가하는 마이그레이션 함수"""
+    from sqlalchemy import text
+    
+    # 추가할 컬럼 정의 (이름, 타입)
+    migrations = [
+        ("gear_level", "INTEGER DEFAULT 1"),
+        ("max_gear_level", "INTEGER DEFAULT 1"),
+        ("gear_name", "VARCHAR DEFAULT '기본 장비'"),
+        ("max_gambling_win", "INTEGER DEFAULT 0"),
+        ("total_gambling_win", "INTEGER DEFAULT 0"),
+        ("last_claim_time", "TIMESTAMP"),
+        ("last_attendance_date", "DATE"),
+        ("attendance_streak", "INTEGER DEFAULT 0")
+    ]
+    
+    async with engine.connect() as conn:
+        for col_name, col_type in migrations:
+            try:
+                # PostgreSQL/SQLite 모두 호환되는 컬럼 존재 확인 및 추가
+                # 에러 발생 시(이미 존재할 때) 무시하도록 설계
+                await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                print(f"[Migration] Added column: {col_name}")
+            except Exception:
+                # 이미 컬럼이 존재하는 경우 등
+                pass
+        await conn.commit()
+
 # DB 초기화 함수
 async def init_db():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        print("✅ 데이터베이스 초기화 완료")
+        
+        # 컬럼 마이그레이션 실행
+        await apply_migrations()
+        
+        print("✅ 데이터베이스 초기화 및 마이그레이션 완료")
     except Exception as e:
         print(f"❌ 데이터베이스 초기화 실패: {e}")
         # gaierror 등 연결 오류 발생 시 여기서 캐치됨
