@@ -66,43 +66,45 @@ class User(Base):
     last_attendance_date = Column(Date, nullable=True) # 마지막 출석 날짜
     attendance_streak = Column(Integer, default=0)     # 연속 출석 일수
 
-async def apply_migrations():
-    """누락된 컬럼을 자동으로 추가하는 마이그레이션 함수"""
-    from sqlalchemy import text
-    
-    # 추가할 컬럼 정의 (이름, 타입)
-    migrations = [
-        ("gear_level", "INTEGER DEFAULT 1"),
-        ("max_gear_level", "INTEGER DEFAULT 1"),
-        ("gear_name", "VARCHAR DEFAULT '기본 장비'"),
-        ("max_gambling_win", "INTEGER DEFAULT 0"),
-        ("total_gambling_win", "INTEGER DEFAULT 0"),
-        ("last_claim_time", "TIMESTAMP"),
-        ("last_attendance_date", "DATE"),
-        ("attendance_streak", "INTEGER DEFAULT 0")
-    ]
-    
-    async with engine.connect() as conn:
-        for col_name, col_type in migrations:
-            try:
-                # PostgreSQL/SQLite 모두 호환되는 컬럼 존재 확인 및 추가
-                # 에러 발생 시(이미 존재할 때) 무시하도록 설계
-                await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
-                print(f"[Migration] Added column: {col_name}")
-            except Exception:
-                # 이미 컬럼이 존재하는 경우 등
-                pass
-        await conn.commit()
-
 # DB 초기화 함수
 async def init_db():
+    from sqlalchemy import text
     try:
+        # 1. 기존 테이블 생성 (없을 경우에만 작동)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         
-        # 컬럼 마이그레이션 실행
-        await apply_migrations()
+        # 2. 부족한 컬럼 강제 추가 (이미 있으면 무시됨)
+        # PostgreSQL은 'IF NOT EXISTS'를 지원하지만, SQLite는 지원하지 않으므로 
+        # 개별 쿼리 단위로 시도하여 모든 환경에서 안전하게 작동하도록 합니다.
+        is_postgres = "postgresql" in DATABASE_URL.lower()
         
+        columns = [
+            ("gear_level", "INTEGER DEFAULT 1"),
+            ("max_gear_level", "INTEGER DEFAULT 1"),
+            ("gear_name", "VARCHAR DEFAULT '기본 장비'"),
+            ("max_gambling_win", "INTEGER DEFAULT 0"),
+            ("total_gambling_win", "INTEGER DEFAULT 0"),
+            ("last_claim_time", "TIMESTAMP"),
+            ("last_attendance_date", "DATE"),
+            ("attendance_streak", "INTEGER DEFAULT 0")
+        ]
+
+        async with engine.connect() as conn:
+            for col_name, col_type in columns:
+                try:
+                    if is_postgres:
+                        # PostgreSQL: IF NOT EXISTS 문법 사용
+                        await conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_type};"))
+                    else:
+                        # SQLite: IF NOT EXISTS가 없으므로 직접 시도 후 실패 시 무시
+                        await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type};"))
+                    await conn.commit()
+                except Exception:
+                    # 컬럼이 이미 존재하는 경우 등 에러 발생 시 무시하고 다음 컬럼 진행
+                    pass
+            
+        print("[DB] ✅ 누락된 컬럼 체크 및 추가 완료")
         print("✅ 데이터베이스 초기화 및 마이그레이션 완료")
     except Exception as e:
         print(f"❌ 데이터베이스 초기화 실패: {e}")
